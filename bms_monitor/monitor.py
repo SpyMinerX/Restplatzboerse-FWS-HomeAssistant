@@ -1,4 +1,5 @@
-import csv, io, json, os, re, time, logging, unicodedata
+import csv, io, json, os, re, time, logging, unicodedata, smtplib, ssl
+from email.message import EmailMessage
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -102,27 +103,84 @@ def notify(service,title,message):
     res.raise_for_status()
 def save(state):
     tmp=STATE.with_suffix('.tmp');tmp.write_text(json.dumps(state));tmp.replace(STATE)
+def email_notify(cfg, recipient, title, message):
+    mail=EmailMessage()
+    mail['From']=cfg['smtp_sender']
+    mail['To']=recipient
+    mail['Subject']=title
+    mail.set_content(message+'\n\n'+URL if URL not in message else message)
+    context=ssl.create_default_context()
+    host=cfg['smtp_host']; port=cfg['smtp_port']
+    if cfg['smtp_security']=='ssl':
+        connection=smtplib.SMTP_SSL(host,port,timeout=30,context=context)
+    else:
+        connection=smtplib.SMTP(host,port,timeout=30)
+    with connection as smtp:
+        if cfg['smtp_security']=='starttls':
+            smtp.ehlo(); smtp.starttls(context=context); smtp.ehlo()
+        if cfg.get('smtp_username'):
+            smtp.login(cfg['smtp_username'],cfg.get('smtp_password',''))
+        smtp.send_message(mail)
+
+def channels(cfg):
+    result={}
+    if cfg.get('push_enabled',True):
+        service=cfg.get('notify_service','')
+        if not service.startswith('notify.') or 'CHANGE_ME' in service:
+            raise ValueError('Bitte notify_service konfigurieren')
+        result['push:'+service]=lambda title,message:notify(service,title,message)
+    if cfg.get('email_enabled',False):
+        recipients=list(dict.fromkeys(x.strip() for x in cfg.get('email_recipients',[]) if x.strip()))
+        if not cfg.get('smtp_host') or not cfg.get('smtp_sender') or not recipients:
+            raise ValueError('Bitte SMTP-Server, Absender und Empfänger konfigurieren')
+        if cfg.get('smtp_security') not in ('ssl','starttls'):
+            raise ValueError('SMTP benötigt TLS oder STARTTLS')
+        for recipient in recipients:
+            result['email:'+recipient]=lambda title,message,recipient=recipient:email_notify(cfg,recipient,title,message)
+    if not result:raise ValueError('Mindestens einen Benachrichtigungskanal aktivieren')
+    return result
+
+def deliver(senders, done, title, message, state):
+    for channel,send in senders.items():
+        if channel in done:continue
+        try:
+            send(title,message)
+        except Exception as exc:
+            logging.error('Benachrichtigung fehlgeschlagen (%s): %s',channel.split(':')[0],type(exc).__name__)
+            continue
+        done.append(channel)
+        save(state)
+        logging.info('Benachrichtigung gesendet (%s)',channel.split(':')[0])
+
 def main():
-    cfg=json.loads(Path('/data/options.json').read_text()); service=cfg['notify_service']; interval=cfg['interval_minutes']*60
-    if 'CHANGE_ME' in service:raise ValueError('Bitte notify_service konfigurieren')
+    cfg=json.loads(Path('/data/options.json').read_text())
+    interval=cfg['interval_minutes']*60
+    senders=channels(cfg)
     courses=[norm(x) for x in cfg.get('courses',['Gruppenführer']) if norm(x)]
     mode=cfg.get('match_mode','exact')
     if not courses or mode not in ('exact','contains'):raise ValueError('Bitte gültige Lehrgangsfilter konfigurieren')
     logging.info('Lehrgangsfilter: %s (%s)',cfg.get('courses',['Gruppenführer']),mode)
     state=json.loads(STATE.read_text()) if STATE.exists() else {'seen':{},'failures':0,'error_sent':False}
+    if 'delivered' not in state:
+        state['delivered']={key:[ch for ch in senders if ch.startswith('push:')] for key in state.get('seen',{})}
+    state.setdefault('error_delivered',[])
     while True:
         try:
-            data,name=download(); logging.info('Export %s: %d Bytes',name,len(data)); found=matches(rows(data,name),courses,mode)
+            data,name=download()
+            logging.info('Export %s: %d Bytes',name,len(data))
+            found=matches(rows(data,name),courses,mode)
+            state['delivered']={key:state['delivered'].get(key,[]) for key in found}
+            state['seen']=found
+            state['failures']=0
+            state['error_delivered']=[]
+            save(state)
             for key,r in found.items():
-                if key not in state['seen']:
-                    notify(service,'🚒 FWS – freier Lehrgangsplatz!',f"{r['title']}\n{r['place']}\n{r['start']} – {r['end']}\nTerminschlüssel: {key}\nFreie Plätze: {r['free']}\n{URL}")
-                    state['seen'][key]=r;save(state)
-            state={'seen':found,'failures':0,'error_sent':False};save(state)
+                deliver(senders,state['delivered'][key],'🚒 FWS – freier Lehrgangsplatz!',f"{r['title']}\n{r['place']}\n{r['start']} – {r['end']}\nTerminschlüssel: {key}\nFreie Plätze: {r['free']}\n{URL}",state)
         except Exception:
-            logging.exception('Prüfung fehlgeschlagen');state['failures']+=1
-            if state['failures']>=3 and not state['error_sent']:
-                try:notify(service,'BMS Monitor – Störung','Export konnte nicht zuverlässig geprüft werden. Bitte Restplatzbörse und Add-on-Protokoll prüfen.');state['error_sent']=True
-                except Exception:logging.exception('Störungsmeldung fehlgeschlagen')
+            logging.exception('Prüfung fehlgeschlagen')
+            state['failures']+=1
+            if state['failures']>=3:
+                deliver(senders,state['error_delivered'],'BMS Monitor – Störung','Export konnte nicht zuverlässig geprüft werden. Bitte Restplatzbörse und Add-on-Protokoll prüfen.\n'+URL,state)
             save(state)
         time.sleep(interval)
 if __name__=='__main__':main()
