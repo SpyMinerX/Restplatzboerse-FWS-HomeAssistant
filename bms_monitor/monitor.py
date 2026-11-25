@@ -4,7 +4,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 import requests, openpyxl, xlrd
 from defusedxml import ElementTree as ET
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, Error as PlaywrightError
 URL='https://www.bms-fw.bayern.de/Navigation/Public/lastminute.aspx'
 STATE=Path('/data/state.json')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -15,7 +15,20 @@ def download():
         browser=p.chromium.launch(headless=True, args=['--no-sandbox'])
         try:
             page=browser.new_page(accept_downloads=True)
-            page.goto(URL,wait_until='domcontentloaded',timeout=60000)
+            for attempt in range(1,4):
+                try:
+                    logging.info('BMS Seitenaufruf %d/3',attempt)
+                    response=page.goto(URL,wait_until='domcontentloaded',timeout=60000)
+                    if response is not None and response.status>=400:
+                        raise RuntimeError('BMS HTTP '+str(response.status))
+                    logging.info('BMS Seite geladen: %s',page.url)
+                    break
+                except PlaywrightError as exc:
+                    logging.warning('Seitenaufruf %d/3 fehlgeschlagen: %s',attempt,exc)
+                    if attempt==3:raise
+                    time.sleep(5*attempt)
+                    page.close()
+                    page=browser.new_page(accept_downloads=True)
             button=page.get_by_text('Export',exact=True)
             if not button.count(): button=page.locator('input[value="Export"], [title="Export"], [aria-label="Export"]')
             with page.expect_download(timeout=90000) as event:
