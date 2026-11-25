@@ -1,3 +1,8 @@
+# 0.1.4
+
+- Retry browser navigation up to three times with fresh pages and increasing delays.
+- Log navigation attempts, final URL and HTTP errors.
+
 # 0.1.3
 
 - Configurable list of course names and exact or substring matching.
