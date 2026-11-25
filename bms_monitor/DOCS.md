@@ -1,5 +1,15 @@
-# BMS Gruppenführer Monitor
+# FWS Restplatzbörse Monitor
 
-Beta: live export and notification delivery are not yet verified.
+Configure `notify_service` with a notification entity or mobile_app action, `interval_minutes` with the polling interval, and `courses` with a list of course names. `match_mode: exact` matches complete normalized titles; `contains` matches substrings and may include advanced courses. All schools are monitored. Only future/current-date courses with vacancies qualify. No registration is performed.
 
-Set `notify_service` to your Companion App action (e.g. `notify.mobile_app_my_phone`) and `interval_minutes` to 5. Start the add-on and check its logs. Enable Start on boot. No registration is performed.
+Example:
+```yaml
+interval_minutes: 5
+notify_service: notify.mobile_app_my_phone
+courses:
+  - Gruppenführer
+  - Zugführer
+match_mode: exact
+```
+
+Beta: live export and end-to-end notification delivery still require verification.
