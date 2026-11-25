@@ -80,7 +80,13 @@ def matches(table):
 def notify(service,title,message):
     domain,action=service.split('.',1)
     if domain!='notify':raise ValueError('notify_service muss notify.* sein')
-    res=requests.post('http://supervisor/core/api/services/'+domain+'/'+action,headers={'Authorization':'Bearer '+os.environ['SUPERVISOR_TOKEN']},json={'title':title,'message':message,'data':{'url':URL,'clickAction':URL}},timeout=30);res.raise_for_status()
+    if action.startswith('mobile_app_'):
+        payload={'title':title,'message':message,'data':{'url':URL,'clickAction':URL}}
+    else:
+        payload={'entity_id':service,'title':title,'message':message}
+        action='send_message'
+    res=requests.post('http://supervisor/core/api/services/'+domain+'/'+action,headers={'Authorization':'Bearer '+os.environ['SUPERVISOR_TOKEN']},json=payload,timeout=30)
+    res.raise_for_status()
 def save(state):
     tmp=STATE.with_suffix('.tmp');tmp.write_text(json.dumps(state));tmp.replace(STATE)
 def main():
