@@ -1,0 +1,15 @@
+name: BMS Gruppenführer Monitor
+version: '0.1.0'
+slug: bms_gruppenfuehrer
+description: Überwacht die BMS Restplatzbörse per Browserexport
+arch: [amd64, aarch64]
+startup: application
+boot: auto
+init: false
+homeassistant_api: true
+options:
+  interval_minutes: 5
+  notify_service: notify.mobile_app_CHANGE_ME
+schema:
+  interval_minutes: int(1,1440)
+  notify_service: str
