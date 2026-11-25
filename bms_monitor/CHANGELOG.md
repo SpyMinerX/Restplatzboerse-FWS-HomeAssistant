@@ -1,3 +1,9 @@
+# 0.1.5
+
+- Optional encrypted SMTP email with multiple recipients and independent push toggle.
+- Track delivery per channel and recipient, retry failures without repeating successful deliveries.
+- Preserve existing push settings and course history.
+
 # 0.1.4
 
 - Retry browser navigation up to three times with fresh pages and increasing delays.
