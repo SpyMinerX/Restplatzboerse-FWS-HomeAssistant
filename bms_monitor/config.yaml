@@ -1,5 +1,5 @@
 name: FWS Restplatzbörse Monitor
-version: '0.1.4'
+version: '0.1.5'
 slug: bms_gruppenfuehrer
 description: Überwacht die BMS Restplatzbörse per Browserexport
 arch: [amd64, aarch64]
@@ -13,9 +13,28 @@ options:
   courses:
     - Gruppenführer
   match_mode: exact
+  push_enabled: true
+  email_enabled: false
+  email_recipients: []
+  smtp_host: ""
+  smtp_port: 587
+  smtp_security: starttls
+  smtp_username: ""
+  smtp_password: ""
+  smtp_sender: ""
 schema:
   interval_minutes: int(1,1440)
   notify_service: str
   courses:
     - str
   match_mode: list(exact|contains)
+  push_enabled: bool
+  email_enabled: bool
+  email_recipients:
+    - email
+  smtp_host: str
+  smtp_port: port
+  smtp_security: list(starttls|ssl)
+  smtp_username: str
+  smtp_password: password
+  smtp_sender: str
