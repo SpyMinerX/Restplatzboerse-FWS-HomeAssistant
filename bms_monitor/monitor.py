@@ -9,7 +9,7 @@ URL='https://www.bms-fw.bayern.de/Navigation/Public/lastminute.aspx'
 STATE=Path('/data/state.json')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 def norm(s):
-    return re.sub(r'[^a-z0-9]', '', unicodedata.normalize('NFKD',str(s).lower()).encode('ascii','ignore').decode())
+    return re.sub(r'[^a-z0-9]', '', unicodedata.normalize('NFKD',str(s).lower().replace('ä','ae').replace('ö','oe').replace('ü','ue').replace('ß','ss')).encode('ascii','ignore').decode())
 def download():
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True, args=['--no-sandbox'])
@@ -61,7 +61,7 @@ def parse_date(v):
         try:return datetime.strptime(s,f).date()
         except ValueError:pass
     raise ValueError('Unbekanntes Datum: '+s)
-def matches(table):
+def matches(table, courses, mode):
     for i,row in enumerate(table):
         h=[norm(x) for x in row]; idx={k:next((j for j,x in enumerate(h) if x in a),None) for k,a in ALIASES.items()}
         if all(v is not None for v in idx.values()):break
@@ -72,7 +72,7 @@ def matches(table):
         if len(row)<=max(idx.values()):raise ValueError('Unvollständige Exportzeile')
         r={k:row[j] for k,j in idx.items()}; total+=1
         t=norm(r['title'])
-        if not re.fullmatch(r'(lehrgang)?gruppenf(u|ue)hrer(in|innen)?(lehrgang|ausbildung)?',t):continue
+        if not any((t == q if mode == 'exact' else q in t) for q in courses):continue
         if parse_date(r['start'])<datetime.now(ZoneInfo('Europe/Berlin')).date():continue
         if int(float(str(r['free']).replace(',','.')))>0:
             found[str(r['key'])]={k:str(v) for k,v in r.items()}
@@ -92,13 +92,17 @@ def save(state):
 def main():
     cfg=json.loads(Path('/data/options.json').read_text()); service=cfg['notify_service']; interval=cfg['interval_minutes']*60
     if 'CHANGE_ME' in service:raise ValueError('Bitte notify_service konfigurieren')
+    courses=[norm(x) for x in cfg.get('courses',['Gruppenführer']) if norm(x)]
+    mode=cfg.get('match_mode','exact')
+    if not courses or mode not in ('exact','contains'):raise ValueError('Bitte gültige Lehrgangsfilter konfigurieren')
+    logging.info('Lehrgangsfilter: %s (%s)',cfg.get('courses',['Gruppenführer']),mode)
     state=json.loads(STATE.read_text()) if STATE.exists() else {'seen':{},'failures':0,'error_sent':False}
     while True:
         try:
-            data,name=download(); logging.info('Export %s: %d Bytes',name,len(data)); found=matches(rows(data,name))
+            data,name=download(); logging.info('Export %s: %d Bytes',name,len(data)); found=matches(rows(data,name),courses,mode)
             for key,r in found.items():
                 if key not in state['seen']:
-                    notify(service,'🚒 Gruppenführer – freier Lehrgangsplatz!',f"{r['title']}\n{r['place']}\n{r['start']} – {r['end']}\nTerminschlüssel: {key}\nFreie Plätze: {r['free']}\n{URL}")
+                    notify(service,'🚒 FWS – freier Lehrgangsplatz!',f"{r['title']}\n{r['place']}\n{r['start']} – {r['end']}\nTerminschlüssel: {key}\nFreie Plätze: {r['free']}\n{URL}")
                     state['seen'][key]=r;save(state)
             state={'seen':found,'failures':0,'error_sent':False};save(state)
         except Exception:
