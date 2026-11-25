@@ -1,3 +1,8 @@
+# 0.1.2
+
+- Support modern notify entities via notify.send_message and retain legacy mobile_app notification actions.
+- Modern notifications include the course URL in the message body.
+
 # 0.1.1
 
 - Fix initial installation failure: build from Python 3.12 slim and install Chromium with Playwright during Docker build.
