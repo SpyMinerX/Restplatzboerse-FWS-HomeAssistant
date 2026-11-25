@@ -1,3 +1,9 @@
+# 0.1.3
+
+- Configurable list of course names and exact or substring matching.
+- Rename display name to FWS Restplatzbörse Monitor; retain slug and persistent data.
+- Normalize German umlauts and transliterations.
+
 # 0.1.2
 
 - Support modern notify entities via notify.send_message and retain legacy mobile_app notification actions.
